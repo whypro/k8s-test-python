@@ -3,12 +3,14 @@ import os
 import yaml
 import requests
 import time
+import sys
 
 # Configs can be set in Configuration class directly or using helper utility
 config.load_kube_config('/Users/haoyuwang/Others/evm-test-kubeconfig')
 #config.load_kube_config()
 test_namespace = 'default'
 sleep_time_s = 0.05
+timeout_s = 5
 
 
 def test_apiserver(timeout):
@@ -19,9 +21,9 @@ def test_apiserver(timeout):
         # sleep 50ms
         time.sleep(0.05)
         try:
-            pods = api.list_namespaced_pod('kube-system')
+            pods = api.list_namespaced_pod('kube-system', timeout_seconds=timeout_s)
         except Exception as e:
-            # print e
+            print type(e), e
             result['error'] += 1
             continue
         result['success'] += 1
@@ -43,17 +45,24 @@ def test_service(timeout):
             if not ip:
                 continue
             port = service.spec.ports[0].port
-            url = ip+':'+str(port)
+            if port == 443:
+                schema = 'https'
+            else:
+                schema = 'http'
+            url = schema+'://'+ip+':'+str(port)
             try:
-                rsp = requests.get(url, timeout=5)
+                rsp = requests.get(url, timeout=timeout_s)
             except Exception as e:
-                # print e
+                print type(e), e
                 result['error'] += 1
                 continue
 
-            if rsp.status_code != 200:
+            if rsp.status_code in range(500, 600):
                 result['error'] += 1
                 continue
+            elif rsp.status_code != 200:
+                # warning
+                print rsp.status_code
 
             result['success'] += 1
 
@@ -69,7 +78,7 @@ def test_create_service(filename):
     try:
         service = v1_api.create_namespaced_service(namespace, obj)
     except Exception as e:
-        print e
+        print type(e), e
         return False
 
     return True
@@ -85,7 +94,7 @@ def test_delete_service(filename):
     try:
         service = v1_api.delete_namespaced_service(name, namespace)
     except Exception as e:
-        print e
+        print type(e), e
         return False
 
     return True
@@ -105,7 +114,7 @@ def test_create_deployment(filename, timeout):
     try:
         deployment = v1beta1_api.create_namespaced_deployment(namespace, obj)
     except Exception as e:
-        print e
+        print type(e), e
         return False
 
     start = time.time()
@@ -158,7 +167,7 @@ def test_delete_deployment(filename, timeout):
     try:
         deployment = v1beta1_api.delete_namespaced_deployment(name, namespace, delete_options)
     except Exception as e:
-        print e
+        print type(e), e
         return False
 
     start = time.time()
@@ -261,12 +270,20 @@ def test_pod_status_consistent(timeout):
 
 
 if __name__ == "__main__":
-    #print test_apiserver(60)
-    #print test_service(60)
-
-    print test_create_deployment('nginx-deploy.yaml', 300)
-    #print test_delete_deployment('nginx-deploy.yaml', 300)
+    what = sys.argv[1]
+    if what == 'apiserver':
+        print test_apiserver(60)
+    elif what == 'service':
+        print test_service(60)
+    elif what == 'create-deployment':
+        print test_create_deployment('nginx-deploy.yaml', 300)
+    elif what == 'delete-deployment':
+        print test_delete_deployment('nginx-deploy.yaml', 300)
+    elif what == 'pod-status':
+        test_pod_status_consistent(300)
+    elif what == 'create-service':
+        print test_create_service('nginx-svc.yaml')
+    elif what == 'delete-service':
+        print test_delete_service('nginx-svc.yaml')
     #test_watch_pod_events(300)
-    #test_pod_status_consistent(300)
-    print test_create_service('nginx-svc.yaml')
-    #print test_delete_service('nginx-svc.yaml')
+
